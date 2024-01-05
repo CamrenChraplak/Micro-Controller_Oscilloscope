@@ -1,0 +1,178 @@
+/**
+ * CSS Variables
+ */
+
+:root {
+  --canvasWidth: 60vw;
+  --canvasHeight: 100vh;
+  --menuWidth: 40vw;
+  --menuHeight: 100vh;
+  --menuButtonWidth: 60px;
+  --menuButtonHeigt: 60px;
+}
+
+/**
+ * Element Settings
+ */
+
+body {
+  margin: 0;
+  background-color: #4b1212;
+  color: white;
+}
+
+button {
+  cursor: pointer;
+}
+
+button span {
+  display: inline-block;
+  transform: rotate(90deg);
+}
+
+canvas {
+  width: var(--canvasWidth, 60vw);
+  height: var(--canvasHeight, 100vh);
+}
+
+/**
+ * Navigation Menu
+ */
+
+.canvas-navigation {
+  position: fixed;
+  bottom: 0;
+  width: var(--menuWidth, 40vw);
+  text-align: center;
+  padding: 2px 0px;
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.navigation-button {
+  background-color: #00af00;
+  border: 0;
+  border-radius: 10px;
+  width: 20px;
+  height: 20px;
+  padding: 0px;
+}
+
+.centered-elements {
+  background-color: #000000;
+  width: 205px;
+  height: 25px;
+  border-radius: 15px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0px;
+}
+
+/**
+ * Oscilloscope Elements
+ */
+
+.oscilloscope {
+  float: left;
+  background-color: #000000;
+  width: var(--canvasWidth, 60vw);
+  height: var(--canvasHeight, 100vh);
+}
+
+.oscilloscope-menu {
+  float: left;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  width: var(--menuWidth, 40vw);
+  height: var(--menuHeight, 100vh);
+}
+
+.oscilloscope-canvas {
+  display: block;
+  background-color: #000000;
+  float: left;
+  padding: 0px;
+  border-bottom: 0px;
+  border-width: 0px;
+}
+
+.channel-select {
+  /*
+  overflow-y: hidden;
+  overflow-x: scroll;
+  width: var(--menuWidth, 40vw);
+  height: var(--menuButtonHeigt, 60px);
+  display: inline-block;
+  white-space: nowrap
+  */
+}
+
+/**
+ * Active Menu Buttons
+ */
+
+.button-channel {
+  float: left;
+  border-radius: 10px;
+  border: 0;
+  padding: 3px;
+  color: white;
+  background-color: #00af00;
+  border: 5px solid #00af00;
+  width: var(--menuButtonWidth, 60px);
+  height: var(--menuButtonHeigt, 60px);
+}
+
+.button-channel:hover {
+  background-color: #2ec27e;
+}
+
+.button-channel:active {
+  background-color: green;
+}
+
+/**
+ * Inactive Menu Buttons
+ */
+
+.button-channel-disabled {
+  float: left;
+  border-radius: 10px;
+  border: 0;
+  padding: 3px;
+  color: white;
+  background-color: #c01c28;
+  border: 5px solid #c01c28;
+  width: var(--menuButtonWidth, 60px);
+  height: var(--menuButtonHeigt, 60px);
+}
+
+.button-channel-disabled:hover {
+  background-color: #ed333b;
+}
+
+.button-channel-disabled:active {
+  background-color: #800000;
+}
+
+/**
+ * Disabled Menu Buttons
+ */
+
+/**
+ * Selected Channels
+ */
+
+.selected-channel {
+  background-color: #4b1212;
+  border-radius: 20px;
+  padding: 10px;
+  border: 5px solid black;
+}
+
+.selected-channel-highlight {
+  border: 5px solid black;
+}

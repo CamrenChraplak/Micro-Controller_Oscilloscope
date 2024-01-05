@@ -1,0 +1,2 @@
+PLL_CLK is an internal PLL clock with a frequency of 320 MHz or 480 MHz
+APLL_CLK is an internal Audio PLL clock with a frequency range of 16 ~ 128 MHz

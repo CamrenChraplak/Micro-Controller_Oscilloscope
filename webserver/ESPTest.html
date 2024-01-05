@@ -1,0 +1,60 @@
+<html>
+    <style type="text/css">
+    </style>
+    <script>
+        function send(led, led_sts) {
+            var xhttp = new XMLHttpRequest();
+            xhttp.onreadystatechange = function() {
+            if (this.readyState == 4 && this.status == 200) {
+                var message = JSON.parse(this.responseText);
+                if (message.green != undefined) {
+                    document.getElementById("GREENLED").innerHTML = message.green;
+                }
+                if (message.red != undefined) {
+                    document.getElementById("REDLED").innerHTML = message.red;
+                }
+            }
+            };
+            xhttp.open("GET", "led_set?" + led + "="+led_sts, true);
+            xhttp.send();
+        }
+
+        setInterval(function() {
+            getData();
+        }, 20);
+
+        function getData() {
+            var xhttp = new XMLHttpRequest();
+            xhttp.onreadystatechange = function() {
+            if (this.readyState == 4 && this.status == 200) {
+                //document.getElementById("adc_val").innerHTML = this.responseText;
+                var message = JSON.parse(this.responseText);
+                if (message.adc != undefined) {
+                    document.getElementById("adc_val").innerHTML = message.adc;
+                }
+                if (message.time != undefined) {
+                    document.getElementById("time").innerHTML = message.time;
+                }
+            }
+            };
+            xhttp.open("GET", "adcread", true);
+            xhttp.send();
+        }
+    </script>
+    <body>
+        <center>
+            <h1>AJAX Server</h1>
+            <button onclick="send('red', 1)">RED ON</button>
+            <button onclick="send('red', 0)">RED OFF</button><BR><BR>
+            <button onclick="send('green', 1)">GREEN ON</button>
+            <button onclick="send('green', 0)">GREEN OFF</button>
+            <br>
+            <h2>
+                ADC: <span id="adc_val">0</span><br><br>
+                Red LED State: <span id="REDLED">off</span><br><br>
+                Green LED State: <span id="GREENLED">off</span><br><br>
+                Up Time: <span id="time">Not Started</span>
+            </h2>
+        </center>
+    </body>
+</html>

@@ -1,0 +1,671 @@
+/**
+ * Global Variables
+ */
+
+//Canvas properties
+/*
+let canvas = document.createElement('canvas');
+*/
+let canvas = new OffscreenCanvas(20, 20);
+let ctx;
+let screenCanvas = document.getElementById("canvas");
+let screenCTX;
+let root = document.querySelector(':root');
+let rootStyle = getComputedStyle(root);
+//const canvasPercent = rootStyle.getPropertyValue('--canvasPercent') / 100;
+const canvasPercent = 60;
+//Stores oscilloscope channel data
+let numChannels;
+let channels = [];
+const colors = ["#FFFF00", "#00FF00", "#0000FF", "#FF0000", "#FF00FF",
+    "#00FFFF", "#808000", "#800080", "#008080", "#FF8000"];
+const backColor = "#000000";
+const gridColor = "#808080";
+const foreColor = "#FFFFFF";
+const originColor = "#FF0000";
+const textStyle = "12px serif";
+//Sets padding constants
+let channelPadding = 100;
+let topPadding = 15;
+let bottomPadding = 35;
+let leftPadding = 100;
+let rightPadding = 10 + channelPadding;
+let prevHorizontal = true;
+let rightLegend = true;
+//Should be a power of 2
+const lineSpacing = 128;
+//Oscilloscope variables
+let maxFrequency, adcMax, maxVoltage, adcBits;
+let centerX, centerY;
+let oscX, oscY;
+let voltUnit, freqUnit;
+let selectedChannel = -1;
+//Zoom in relation to 1/f and Vmax/ADCmax
+let xZoom = 1, yZoom = 1;
+let verticalInvert = false, horizontalInvert = false;
+let xAdjust = 5, yAdjust = 5;
+let mouseX = 0, mouseY = 0;
+
+tests()
+function tests() {
+  if (window.Worker) {
+    let workser = new Worker('test.js');
+    workser.postMessage("start ");
+    workser.onmessage = function(e) {
+      document.getElementById("data").innerHTML = e.data;
+    };
+    workser.postMessage("start not");
+  }
+  else {
+    document.getElementById("data").innerHTML = "Doesn't work";
+  }
+}
+
+/**
+ * Custom Objects
+ */
+
+//Stores individual channel data
+function channel(id) {
+  this.channelID = id;
+  this.enabled = true;
+  this.selected = false;
+  //Coordinates in relation to (0,0)
+  //Coordinates and compression in magnitudes of frequencySpacing
+  this.x = 0; this.y = 0;
+  this.compressionWidth = 20;
+  this.compressionHeight = 20;
+  this.readings = [];
+  this.frequencySpacing = 20;
+  this.upperResistance = 0;
+  this.lowerResistance = 0;
+  this.vUnitStep = 0;
+  this.fUnitStep = 0;
+};
+
+/**
+ * Interval Functions
+ */
+
+//Keeps updating screen
+setInterval(function() {
+  //draw();
+}, 25);
+//Keeps polling data
+setInterval(function() {
+  getData();
+}, 2);
+//Polling key presses
+setInterval(function() {
+  adjustGrid();
+}, 20);
+
+/**
+ * Initializes Program
+ */
+
+//Initialization
+init();
+function init() {
+  //////////Requested from microcontroller//////////
+  numChannels = 10;
+  maxFrequency = 80000000;
+  adcBits = 10;
+  adcMax = 2 ** adcBits - 1;
+  maxVoltage = 5;
+  let pins = ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9"];
+  if (verticalInvert) {
+    yAdjust *= -1;
+  }
+  if (horizontalInvert) {
+    xAdjust *= -1;
+  }
+  //////////////////////////////////////////////////
+  mouseX = window.offsetX;
+  mouseY = window.offsetY;
+  voltUnit = maxVoltage / (adcMax + 1);
+  freqUnit = 1 / maxFrequency;
+  let buttons = "<button class='button-channel' style='font-size: 40px'>&#9881;</button>";
+  //Adds button channels
+  for (let i = 0; i < numChannels; i++) {
+
+    if (i >= colors.length) {
+      let value = Math.round(Math.random() * (16 ** 6 - 1));
+      colors[i] = "#" + value.toString(16).toUpperCase();
+      pins[i] = "A" + i.toString();
+    }
+
+    channels[i] = new channel(i);
+    buttons += "<button id='channel" + i +
+        "' class='button-channel'>Ch: " + i.toString() + "<br>Pin: " + pins[i] + "</button>";
+  }
+  document.getElementById("channel-select").innerHTML = buttons;
+  setChannels();
+  for (let i = 0; i < 1000; i++) {
+    getData();
+  }
+  updateScreenSize();
+}
+
+function getData() {
+  const maxReadings = 1000;
+  for (let i = 0; i < numChannels; i++) {
+    if (channels[i].readings.length >= maxReadings) {
+      channels[i].readings.splice(0, 1);
+    }
+    channels[i].readings[channels[i].readings.length] = Math.round(Math.random() * adcMax);
+  }
+}
+
+function setCanvas(fillColor, strokeColor) {
+  ctx.fillStyle = fillColor;
+  ctx.strokeStyle = strokeColor;
+}
+
+function setCanvas(fillColor, strokeColor, line, gap, align) {
+  ctx.fillStyle = fillColor;
+  ctx.strokeStyle = strokeColor;
+  ctx.setLineDash([line, gap]);
+  ctx.textAlign = align;
+}
+
+function updateScreenSize() {
+  //Gets current screen size
+  const width = window.innerWidth || document.documentElement.clientWidth ||
+      document.body.clientWidth;
+  const height = window.innerHeight || document.documentElement.clientHeight ||
+      document.body.clientHeight;
+  //Gets canvas context
+  //"webgl"
+  ctx = canvas.getContext("2d");
+  screenCTX = screenCanvas.getContext("2d");
+
+  if (window.innerHeight > window.innerWidth) {
+    setCSS(100, canvasPercent, 100, 100 - canvasPercent);
+    //Adjusts size from pixel ratio
+    canvas.width = width * window.devicePixelRatio;
+    canvas.height = height * canvasPercent / 100 * window.devicePixelRatio;
+    screenCanvas.width = width * window.devicePixelRatio;
+    screenCanvas.height = height * canvasPercent / 100 * window.devicePixelRatio;
+  }
+  else {
+    setCSS(canvasPercent, 100, 100 - canvasPercent, 100);
+    //Adjusts size from pixel ratio
+    canvas.width = width * canvasPercent / 100 * window.devicePixelRatio;
+    canvas.height = height * window.devicePixelRatio;
+    screenCanvas.width = width * canvasPercent / 100 * window.devicePixelRatio;
+    screenCanvas.height = height * window.devicePixelRatio;
+  }
+  if ((canvas.width - leftPadding - rightPadding - channelPadding) >=
+      (canvas.height - topPadding - bottomPadding) && !prevHorizontal) {
+    rightLegend = true;
+    rightPadding += channelPadding;
+    bottomPadding -= channelPadding;
+    prevHorizontal = true;
+  }
+  else if ((canvas.width - leftPadding - rightPadding) <
+      (canvas.height - topPadding - bottomPadding - channelPadding) && prevHorizontal) {
+    rightLegend = false;
+    rightPadding -= channelPadding;
+    bottomPadding += channelPadding;
+    prevHorizontal = false;
+  }
+
+  centerX = (canvas.width - leftPadding - rightPadding) / 2 + leftPadding;
+  centerY = (canvas.height - topPadding - bottomPadding) / 2 + topPadding;
+
+  if (oscX === undefined) {
+    oscX = (canvas.width - leftPadding - rightPadding) / 2 + leftPadding;
+    oscY = (canvas.height - topPadding - bottomPadding) / 2 + topPadding;
+  }
+
+  ctx.lineWidth = 2;
+  ctx.font = textStyle;
+}
+
+function setCSS(canvasWidth, canvasHeight, menuWidth, menuHeight) {
+  root.style.setProperty('--canvasWidth', canvasWidth.toString() + 'vw');
+  root.style.setProperty('--canvasHeight', canvasHeight.toString() + 'vh');
+  root.style.setProperty('--menuWidth', menuWidth.toString() + 'vw');
+  root.style.setProperty('--menuHeight', menuHeight.toString() + 'vh');
+}
+
+/**
+ * Draws to Screen
+ */
+
+function drawGrid(legend) {
+  ctx.textAlign = "center";
+  let start = oscX % lineSpacing;
+  while (start < leftPadding) start += lineSpacing;
+  
+  for (let cord = start; cord <= canvas.width - rightPadding; cord += lineSpacing) {
+    drawGridSegment(legend, cord, false, cord, canvas.height - bottomPadding + 14,
+        cord, topPadding, cord, canvas.height - bottomPadding);
+  }
+
+  start = oscY % lineSpacing;
+  while (start < topPadding) start += lineSpacing;
+  
+  for (let cord = start; cord <= canvas.height - bottomPadding; cord += lineSpacing) {
+    drawGridSegment(legend, cord, true, leftPadding / 2, cord - 2,
+        leftPadding, cord, canvas.width - rightPadding, cord);
+  }
+}
+
+function drawGridSegment(legend, cord, horizontal, textX, textY, startX, startY, endX, endY) {
+  if (legend) {
+    setCanvas(foreColor, foreColor);
+    drawValues(horizontal, cord, textX, textY);
+  }
+  else {
+    if ((cord == oscX && !horizontal) || (cord == oscY && horizontal)) {
+      setCanvas("red", "red");
+      ctx.setLineDash([]);
+    }
+    else {
+      setCanvas(gridColor, gridColor);
+      ctx.setLineDash([8, 8]);
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+  }
+}
+
+function drawValues(horizontal, cord, textX, textY) {
+  let power = 0;
+  let step;
+  let unit;
+  if (horizontal) {
+    step = maxVoltage / (adcMax + 1);
+
+    for (let i = cord; i < oscY; i += lineSpacing) {
+      power++;
+    }
+    for (let i = cord; i > oscY; i -= lineSpacing) {
+      power--;
+    }
+
+    unit = "V";
+    if (Math.abs(step * power / yZoom * lineSpacing) < 0.1 && power != 0) {
+      unit = "mV";
+      step *= 1000;
+    }
+    if (Math.abs(step * power / yZoom * lineSpacing) < 0.1 && power != 0) {
+      unit = "uV";
+      step *= 1000;
+    }
+
+    ctx.fillText(parseFloat((power * step / yZoom * lineSpacing).toFixed(3)).toString() + " " + unit, textX, textY);
+    ctx.fillText(power.toString() + " * " + maxVoltage.toString() + " / (2^" + adcBits.toString() + ") /", textX, textY + 22);
+    ctx.fillText(yZoom + " * " + lineSpacing.toString() +  " V", textX, textY + 34);
+  }
+  else {
+    unit = "Hz";
+    power = 2;
+    step = 3;
+
+    ctx.fillText(parseFloat((power * step / yZoom * lineSpacing).toFixed(3)).toString() + " " + unit, textX, textY);
+    ctx.fillText("2^" + power.toString() + " V", textX, textY + 12);
+  }
+  
+}
+
+function drawBounds() {
+  ctx.setLineDash([]);
+  setCanvas(foreColor, foreColor);
+  //Draws bounds
+  ctx.beginPath();
+  ctx.moveTo(leftPadding, topPadding);
+  ctx.lineTo(canvas.width - rightPadding, topPadding);
+  ctx.lineTo(canvas.width - rightPadding, canvas.height - bottomPadding);
+  ctx.lineTo(leftPadding, canvas.height - bottomPadding);
+  ctx.lineTo(leftPadding, topPadding);
+  ctx.lineTo(canvas.width - rightPadding, topPadding);
+  ctx.stroke();
+}
+
+function drawLegend() {
+  ctx.textAlign = "left";
+  ctx.setLineDash([]);
+  let channelCount = 0;
+  for (let i = 0; i < numChannels; i++) {
+    if (channels[i].enabled) {
+      if (rightLegend) {
+        ctx.beginPath();
+        setCanvas(colors[i], colors[i]);
+        ctx.moveTo(canvas.width - rightPadding + 5, topPadding + 4 + 20 * channelCount);
+        ctx.lineTo(canvas.width - rightPadding + 25, topPadding + 4 + 20 * channelCount);
+        ctx.stroke();
+        ctx.fillStyle = foreColor;
+        ctx.fillText("Channel: " + i.toString(), canvas.width - rightPadding + 30,
+            topPadding + 8 + 20 * channelCount);
+      }
+      else {
+        ctx.beginPath();
+        setCanvas(colors[i], colors[i]);
+        ctx.moveTo(leftPadding + 5 + 20 * channelCount, canvas.height - channelPadding + 0);
+        ctx.lineTo(leftPadding + 5 + 20 * channelCount, canvas.height - channelPadding + 20);
+        ctx.stroke();
+        const textX = leftPadding + 0 + 20 * channelCount;
+        const textY = canvas.height - channelPadding + 22;
+        ctx.translate(textX, textY);
+        ctx.rotate(Math.PI/2);
+        ctx.fillStyle = foreColor;
+        ctx.fillText("Channel: " + i.toString(), 0,
+            0);
+        //ctx.fillText("Channel: " + i.toString(), 0, 0);
+        ctx.rotate(-Math.PI/2);
+        
+        ctx.translate(-textX, -textY);
+      }
+      channelCount++;
+    }
+  }
+}
+
+//Draws shapes
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawGrid(false);
+  ctx.setLineDash([]);
+  
+  if (xZoom < 32 && xZoom >= 1) {
+    ctx.lineWidth = 1;
+  }
+  
+  for (let j = 0; j < numChannels; j++) {
+    if (channels[j].enabled) {
+      setCanvas(colors[j], colors[j]);
+      ctx.beginPath();
+      //Draws graph
+      /*
+      if (xZoom < 1) {
+        for (let i = 0; i < canvas.width - rightPadding; i++) {
+          let max = 100;
+          let min = 300;
+          ctx.moveTo(oscX + i, oscY - min);
+          ctx.lineTo(oscX + i, oscY - max);
+        }
+      }
+      else {*/
+        ctx.moveTo(oscX, oscY - channels[j].readings[0] * yZoom);
+        for (let i = 0; i < channels[j].readings.length; i++) {
+          ctx.lineTo(oscX + i * xZoom, oscY - channels[j].readings[i] * yZoom);
+        }
+      //}
+      ctx.stroke();
+    }
+  }
+  ctx.lineWidth = 2;
+  ctx.clearRect(0, 0, canvas.width, topPadding);
+  ctx.clearRect(canvas.width - rightPadding, 0, rightPadding, canvas.height);
+  ctx.clearRect(0, 0, leftPadding, canvas.height);
+  ctx.clearRect(0, canvas.height - bottomPadding, canvas.width, canvas.height);
+  drawGrid(true);
+  drawLegend();
+  drawBounds();
+
+  screenCTX.clearRect(0, 0, canvas.width, canvas.height);
+  screenCTX.drawImage(canvas,0,0);
+}
+
+/**
+ * Channel Functions
+ */
+
+//Sets channels according to 
+function setChannels() {
+  for (let i = 0; i < numChannels; i++) {
+    if (channels[i].enabled) {
+      document.getElementById("channel" + i.toString()).classList.remove('button-channel-disabled');
+      document.getElementById("channel" + i.toString()).classList.add('button-channel');
+    }
+    else {
+      document.getElementById("channel" + i.toString()).classList.add('button-channel-disabled');
+      document.getElementById("channel" + i.toString()).classList.remove('button-channel');
+    }
+  }
+}
+
+//Inverts channel of button inputted
+function changeChannel(code) {
+  //selected-channel
+  if (selectedChannel == code) {
+    if (channels[code].enabled) {
+      channels[code].enabled = false;
+    }
+    else {
+      channels[code].enabled = true;
+    }
+  }
+  else if (selectedChannel == -1) {
+    selectedChannel = code;
+    channels[selectedChannel].selected = true;
+    document.getElementById("channel" + selectedChannel.toString()).classList.add('selected-channel-highlight');
+  }
+  else {
+    channels[selectedChannel].selected = false;
+    document.getElementById("channel" + selectedChannel.toString()).classList.remove('selected-channel-highlight');
+    selectedChannel = code;
+    channels[selectedChannel].selected = true;
+    document.getElementById("channel" + selectedChannel.toString()).classList.add('selected-channel-highlight');
+  }
+  setChannels();
+}
+
+//Adds event listeners to buttons
+addButtonEvents();
+function addButtonEvents() {
+  const multiplier = 5;
+  document.getElementById("updaterer").addEventListener("click", function() {
+    draw();
+  });
+  for (let i = 0; i < numChannels; i++) {
+    document.getElementById("channel" + i.toString()).addEventListener("click", function() {
+      changeChannel(i);
+    });
+  }
+  document.getElementById("expand-width").addEventListener("click", function() {
+    xZoom *= 2;
+  });
+  document.getElementById("expand-height").addEventListener("click", function() {
+    yZoom *= 2;
+  });
+  document.getElementById("compress-width").addEventListener("click", function() {
+    xZoom /= 2;
+  });
+  document.getElementById("compress-height").addEventListener("click", function() {
+    yZoom /= 2;
+  });
+  if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+    document.getElementById("move-left").addEventListener("click", function() {
+      oscX += xAdjust * multiplier;
+    });
+    document.getElementById("move-right").addEventListener("click", function() {
+      oscX -= xAdjust * multiplier;
+    });
+    document.getElementById("move-up").addEventListener("click", function() {
+      oscY += xAdjust * multiplier;
+    });
+    document.getElementById("move-down").addEventListener("click", function() {
+      oscY -= xAdjust * multiplier;
+    });
+  }
+  else {
+    document.getElementById("move-left").addEventListener("mousedown", function() {
+      arrowLeft = true;
+    });
+    document.getElementById("move-left").addEventListener("mouseup", function() {
+      arrowLeft = false;
+    });
+    document.getElementById("move-right").addEventListener("mousedown", function() {
+      arrowRight = true;
+    });
+    document.getElementById("move-right").addEventListener("mouseup", function() {
+      arrowRight = false;
+    });
+    document.getElementById("move-up").addEventListener("mousedown", function() {
+      arrowUp = true;
+    });
+    document.getElementById("move-up").addEventListener("mouseup", function() {
+      arrowUp = false;
+    });
+    document.getElementById("move-down").addEventListener("mousedown", function() {
+      arrowDown = true;
+    });
+    document.getElementById("move-down").addEventListener("mouseup", function() {
+      arrowDown = false;
+    });
+  }
+
+  
+}
+
+/**
+ * Event Listeners
+ */
+
+document.getElementById("canvas").
+addEventListener("wheel", function(e) {
+  const multiplier = 5;
+  if (e.deltaX > 0) {
+    oscX += xAdjust * multiplier;
+  }
+  else if (e.deltaX < 0) {
+    oscX -= xAdjust * multiplier;
+  }
+  if (e.deltaY > 0) {
+    oscY += yAdjust * multiplier;
+  }
+  else if (e.deltaY < 0) {
+    oscY -= yAdjust * multiplier;
+  }
+});
+
+function mouseClick(e) {
+  /*
+   * Button 0 is left click
+   * Button 2 is right click
+  */
+  for (let i = 0; i < 5; i++) {
+    if (e.button == i) {
+      //document.getElementById("data").innerHTML = "button: " + i.toString();
+    }
+  }
+}
+/*
+document.getElementById("canvas").
+addEventListener("click", function(e) {
+  e.preventDefault();
+  mouseClick(e);
+  
+});
+*/
+/*
+//document.getElementById("canvas").
+addEventListener("contextmenu", function(e) {
+  e.preventDefault();
+  mouseClick(e);
+});
+*/
+let arrowUp = false;
+let arrowDown = false;
+let arrowLeft = false;
+let arrowRight = false;
+
+function adjustGrid() {
+  if (arrowLeft && !arrowRight) {
+    oscX -= xAdjust;
+  }
+  else if (!arrowLeft && arrowRight) {
+    oscX += xAdjust;
+  }
+  if (arrowUp && !arrowDown) {
+    oscY -= yAdjust;
+  }
+  else if (!arrowUp && arrowDown) {
+    oscY += yAdjust;
+  }
+}
+
+addEventListener("mousemove", function(e) {
+  mouseX = e.offsetX;
+  mouseY = e.offsetY;
+});
+
+//document.getElementById("canvas").
+addEventListener("keydown", function(e) {
+  document.getElementById("data").innerHTML = e.key;
+
+  if (mouseX <= canvas.width && mouseY <= canvas.height) {
+    let code = e.key;
+    if (code == "ArrowUp") {
+      arrowUp = true;
+    }
+    else if (code == "ArrowDown") {
+      arrowDown = true;
+    }
+    else if (code == "ArrowRight") {
+      arrowRight = true;
+    }
+    else if (code == "ArrowLeft") {
+      arrowLeft = true;
+    }
+    else if (code == "<") {
+      xZoom *= 2;
+      //oscX += (oscX - centerX) * 2;
+    }
+    else if (code == ">") {
+      xZoom /= 2;
+      //oscX -= (oscX - centerX) / 2;
+    }
+    else if (code == "+") {
+      yZoom *= 2;
+    }
+    else if (code == "-") {
+      yZoom /= 2;
+    }
+  }
+
+  
+  let units = "";
+
+  //ctx.fillText(power.toString() + " * " + maxVoltage.toString() + " / (2^" + adcBits.toString() + ") /", textX, textY + 22);
+  //ctx.fillText(yZoom + " * " + lineSpacing.toString() +  " V", textX, textY + 34);
+
+  units += power.toString() + " * " + maxVoltage.toString() + " / (2^" + adcBits.toString() + ") /";
+  units += yZoom + " * " + lineSpacing.toString() +  " V";
+
+  document.getElementById("units").innerHTML = units;
+});
+
+//document.getElementById("canvas").
+addEventListener("keyup", function(e) {
+  document.getElementById("data").innerHTML = e.key;
+  let code = e.key;
+  if (code == "ArrowUp") {
+    arrowUp = false;
+  }
+  else if (code == "ArrowDown") {
+    arrowDown = false;
+  }
+  else if (code == "ArrowRight") {
+    arrowRight = false;
+  }
+  else if (code == "ArrowLeft") {
+    arrowLeft = false;
+  }
+});
+
+window.addEventListener("resize", function() {
+  updateScreenSize();
+});
+
+
+
+
+
